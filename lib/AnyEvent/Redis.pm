@@ -84,6 +84,9 @@ sub connect {
     return $cv if $self->{sock};
     weaken $self;
 
+    unshift @{$self->{connect_queue}}, [ AE::cv, 'SELECT', $self->{dbindex} ]
+        if $self->{dbindex};
+
     $self->{sock} = tcp_connect $self->{host}, $self->{port}, sub {
         my $fh = shift
             or do {
@@ -327,6 +330,26 @@ sub _expect {
     $p && $p == $cv or confess "BUG: mismatched CVs";
 }
 
+# special handling of select to store database index for future reconnects
+sub select {
+    my ($self, $dbindex) = @_;
+    my $select_cv = $self->run_cmd('select', $dbindex);
+    my $cmd_cv = AE::cv;
+    $select_cv->cb(
+        sub {
+            $self->{dbindex} = $dbindex;
+            my $recv = eval {$select_cv->recv};
+            if ($@) {
+                $cmd_cv->croak($recv);
+            }
+            else {
+                $cmd_cv->send($recv);
+            }
+        }
+    );
+    return $cmd_cv;
+}
+
 1;
 __END__
 
@@ -400,6 +423,11 @@ occurs.  The error message will be passed to the callback as the sole argument.
 Optional.  Callback that will be fired if a connection error occurs.  The
 error message will be passed to the callback as the sole argument.  After
 this callback, errors will be reported for all outstanding requests.
+
+=item dbindex => <INDEX>
+
+Optional. Default 0. Will send SELECT <INDEX> to switch to database index on
+each (re)connects to Redis server.
 
 =back
 
