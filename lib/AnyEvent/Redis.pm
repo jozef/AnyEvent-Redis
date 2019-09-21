@@ -63,7 +63,8 @@ sub cleanup {
     $self->{on_error}->(@_) if $self->{on_error};
     $self->{on_cleanup}->(@_) if $self->{on_cleanup};
     for (splice(@{$self->{pending_cvs}}),
-         splice(@{$self->{multi_cvs} || []}))
+         splice(@{$self->{multi_cvs} || []}),
+         (map {$_->[0]} splice(@{$self->{connect_queue}})))
     {
         eval { $_->croak(@_) };
         warn "Exception in cleanup callback (ignored): $@" if $@;
